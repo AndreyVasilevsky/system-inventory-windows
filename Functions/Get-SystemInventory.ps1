@@ -25,8 +25,8 @@ function Get-SystemInventory {
                 lab_row_rack_id = $null
                 lab_rack_slot = $null
                 manufacturer = $systemInfo.basicInfo.Manufacturer
-                mgt_ip_address = $null
-                mgt_mac_address = $null
+                mgt_ip_address = $systemInfo.basicInfo.mgt_ip_address
+                mgt_mac_address = $systemInfo.basicInfo.mgt_mac_address
                 name_model = $systemInfo.basicInfo.Model
                 pools = @("Certification")
                 serial_number = $systemInfo.basicInfo.Serial_Number
@@ -49,6 +49,7 @@ function Get-SystemInventory {
                 memory_banks = @(Get-MemoryInfo)
                 motherboard = Get-MotherboardInfo
                 hard_drives = @(Get-StorageInfo)
+                ethernet_controllers = @(Get-NetworkInfo)
                 
             }
             schema_metadata = @{
