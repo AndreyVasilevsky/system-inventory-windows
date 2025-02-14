@@ -45,7 +45,7 @@ function Get-NetworkInfo {
                 nvm_version = $null  # Would need vendor-specific tools
                 pcie_speed_max = $pcieLinkSpeed  
                 pcie_width_current = $pcieLinkWidth
-                pcie_width_max = $null  # Would need additional PCI Express capability query
+                pcie_width_max = $null  
                 pcie_functions = @(
                     @{
                         bus_device_function = $pciInfo.LocationInformation # May need formatting
@@ -54,10 +54,9 @@ function Get-NetworkInfo {
                             $_.AddressFamily -eq 'IPv4' 
                         }).IPAddress
                         mac_address = $controller.MACAddress -replace "-", ":"  # Format MAC with colons
-                        # is_management_port = $false
                         is_management_port = ($controller.InterfaceIndex -eq $basicInfo.mgt_adapter_index)
                         pcie_speed_current = $pcieLinkSpeed
-                        speed = (Get-NetAdapter -InterfaceIndex $controller.InterfaceIndex ).LinkSpeed  # Convert to Gbit/s
+                        speed = (Get-NetAdapter -InterfaceIndex $controller.InterfaceIndex ).LinkSpeed  
                         connected_devices = $null
                     }
                 )

@@ -17,7 +17,7 @@ function Get-ProcessorInfo {
                 socket_type = "Socket " + $_.UpgradeMethod
                 stepping = $_.Stepping
                 thread_count = $_.NumberOfLogicalProcessors
-                manufacturer = $_.Manufacturer
+                manufacturer = if ($_.Manufacturer -like "Intel") { "Intel" } else { if ($_.Manufacturer -like "AMD") { "AMD" } else { $_.Manufacturer } }
             }
         }
     }
