@@ -5,6 +5,18 @@ function Get-ProcessorInfo {
     
     try {
         Get-WmiObject -Class Win32_Processor | ForEach-Object {
+            # Normalize manufacturer name
+            $manufacturer = 
+                if ($_.Manufacturer -like "*Intel*" -or $_.Manufacturer -like "*GenuineIntel*") { 
+                    "Intel" 
+                } 
+                elseif ($_.Manufacturer -like "*AMD*" -or $_.Manufacturer -like "*AuthenticAMD*") { 
+                    "AMD" 
+                } 
+                else { 
+                    $_.Manufacturer 
+                }
+            
             @{
                 cpu_id = $null
                 core_count = $_.NumberOfCores
@@ -17,7 +29,10 @@ function Get-ProcessorInfo {
                 socket_type = "Socket " + $_.UpgradeMethod
                 stepping = $_.Stepping
                 thread_count = $_.NumberOfLogicalProcessors
-                manufacturer = if ($_.Manufacturer -like "Intel") { "Intel" } else { if ($_.Manufacturer -like "AMD") { "AMD" } else { $_.Manufacturer } }
+                manufacturer = $manufacturer
+                codename = $null
+                pcie_gen = $null
+                silicon_family_name = $null
             }
         }
     }

@@ -10,7 +10,9 @@ function Get-StorageInfo {
                 manufacturer = $_.Manufacturer
                 model = $_.Model
                 serial_number = $_.SerialNumber
-                size_gb = [math]::Round($_.Size / 1GB, 2)
+                size_gb = [int]($_.Size / 1GB)  # Convert to integer by truncating decimal
+                hard_drive_type = $null
+                port_form_factor = $null
             }
         }
     }
