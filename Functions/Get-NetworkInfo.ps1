@@ -4,26 +4,64 @@ function Get-NetworkInfo {
     param()
     
     try {
-        $basicInfo = Get-SystemBasicInfo
-        $networkAdapters = Get-WmiObject -Class Win32_NetworkAdapter | 
-            Where-Object { 
-                $_.AdapterType -eq "Ethernet 802.3" -and
-                $_.Name -notmatch "VMware|VirtualBox|Hyper-V|Virtual Adapter|vEthernet" -and
-                $_.Name -notmatch "WAN Miniport|Microsoft Kernel|Miniport|PANGP|VPN" -and
-                $_.Manufacturer -notmatch "Microsoft|VMware|Oracle|Parallel|Citrix"
-            }
-            
+        # Initialize with empty array to avoid null reference
         $results = @()
+        
+        $basicInfo = Get-SystemBasicInfo
+        if ($null -eq $basicInfo) {
+            Write-Warning "Basic system info not available"
+            return $results
+        }
+        
+        # Use try-catch around each WMI query to handle errors
+        try {
+            $networkAdapters = @(Get-WmiObject -Class Win32_NetworkAdapter -ErrorAction Stop | 
+                Where-Object { 
+                    $_.AdapterType -eq "Ethernet 802.3" -and
+                    $_.Name -notmatch "VMware|VirtualBox|Hyper-V|Virtual Adapter|vEthernet" -and
+                    $_.Name -notmatch "WAN Miniport|Microsoft Kernel|Miniport|PANGP|VPN" -and
+                    $_.Manufacturer -notmatch "Microsoft|VMware|Oracle|Parallel|Citrix"
+                })
+        }
+        catch {
+            Write-Warning "Failed to query network adapters: $_"
+            return $results
+        }
+            
+        # Always return an array, even if empty
+        $results = @()
+        
+        # Check if we have any adapters
+        if ($null -eq $networkAdapters -or @($networkAdapters).Count -eq 0) {
+            Write-Warning "No physical network adapters found."
+            return $results  # Return empty array
+        }
         
         foreach ($controller in $networkAdapters) {
             Write-Verbose "Processing network adapter: $($controller.Name)"
+            
+            # Skip virtual adapters by manufacturer or description
+            if ($controller.Name -match "VMware|VirtualBox|Hyper-V|Virtual|WAN Miniport|Microsoft Kernel|Miniport|PANGP|VPN" -or
+                $controller.Description -match "VMware|VirtualBox|Hyper-V|Virtual|WAN Miniport|Microsoft Kernel|Miniport" -or
+                $controller.Manufacturer -match "VMware|Microsoft|Oracle|Parallels|Citrix" -or
+                $controller.PNPDeviceID -match "ROOT\\") {
+                Write-Verbose "Skipping virtual adapter: $($controller.Name)"
+                continue
+            }
             
             # Get PCI information using Win32_PnPSignedDriver
             $pciInfo = Get-WmiObject -Class Win32_PnPSignedDriver |
                 Where-Object { $_.DeviceID -eq $controller.PNPDeviceID }
                 
             if (-not $pciInfo) {
-                Write-Warning "No PCI information found for adapter $($controller.Name)"
+                Write-Verbose "No PCI information found for adapter $($controller.Name)"
+                continue
+            }
+            
+            # Skip if no physical PCI info (likely virtual)
+            $pciIdFormat = $pciInfo.HardwareID | Where-Object { $_ -match 'PCI\\VEN_' } | Select-Object -First 1
+            if (-not $pciIdFormat) {
+                Write-Verbose "Skipping adapter with no PCI information: $($controller.Name)"
                 continue
             }
             
@@ -31,14 +69,6 @@ function Get-NetworkInfo {
             Write-Verbose "Hardware IDs for $($controller.Name):"
             foreach ($id in $pciInfo.HardwareID) {
                 Write-Verbose "  $id"
-            }
-            
-            # Look for PCI ID format (typically the first entry)
-            $pciIdFormat = $pciInfo.HardwareID | Where-Object { $_ -match 'PCI\\VEN_' } | Select-Object -First 1
-            
-            if (-not $pciIdFormat) {
-                Write-Warning "No PCI VEN format found for adapter $($controller.Name)"
-                continue
             }
             
             Write-Verbose "Using PCI ID: $pciIdFormat"
@@ -115,21 +145,6 @@ function Get-NetworkInfo {
                 Write-Verbose "Error getting connection speed: $_"
             }
             
-            # Skip virtual adapters by manufacturer or description
-            if ($controller.Name -match "VMware|VirtualBox|Hyper-V|Virtual|WAN Miniport|Microsoft Kernel|Miniport|PANGP|VPN" -or
-                $controller.Description -match "VMware|VirtualBox|Hyper-V|Virtual|WAN Miniport|Microsoft Kernel|Miniport" -or
-                $controller.Manufacturer -match "VMware|Microsoft|Oracle|Parallels|Citrix" -or
-                $controller.PNPDeviceID -match "ROOT\\") {
-                Write-Verbose "Skipping virtual adapter: $($controller.Name)"
-                continue
-            }
-                
-            # Skip if no physical PCI info (likely virtual)
-            if (-not ($pciInfo.HardwareID | Where-Object { $_ -match 'PCI\\VEN_' })) {
-                Write-Verbose "Skipping adapter with no PCI information: $($controller.Name)"
-                continue
-            }
-            
             # Create the network adapter object
             $adapterInfo = @{
                 ethernet_controller_id = $null
@@ -145,7 +160,7 @@ function Get-NetworkInfo {
                 pcie_functions = @(
                     @{
                         bus_device_function = $controller.PNPDeviceID
-                        ip_address = $ipAddresses[0]  # Take first IP if there are multiple
+                        ip_address = if ($ipAddresses.Count -gt 0) { $ipAddresses[0] } else { $null }
                         is_management_port = ($controller.InterfaceIndex -eq $basicInfo.mgt_adapter_index)
                         mac_address = $controller.MACAddress -replace "-", ":"
                         pcie_speed_current = $pcieLinkSpeed
@@ -173,6 +188,7 @@ function Get-NetworkInfo {
     }
     catch {
         Write-Error "Error getting network info: $_"
+        # Return empty array instead of null to prevent errors
         return @()
     }
 }

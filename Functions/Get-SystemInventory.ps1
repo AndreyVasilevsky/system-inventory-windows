@@ -4,16 +4,36 @@ function Get-SystemInventory {
     param()
     
     try {
-        $systemInfo = @{
-            basicInfo = Get-SystemBasicInfo
-            bios = Get-BiosInfo
-            mb = Get-MotherboardInfo
-            cpus = @(Get-ProcessorInfo)
-            ethernet_controllers = @(Get-NetworkInfo)
-            hard_drives = @(Get-StorageInfo)
-            memory_banks = @(Get-MemoryInfo)
+        # Get basic system info first
+        $basicInfo = Get-SystemBasicInfo
+        if ($null -eq $basicInfo) {
+            throw "Failed to get basic system information"
         }
+        
+        # Initialize other components with empty arrays to avoid null references
+        $biosInfo = Get-BiosInfo
+        $mbInfo = Get-MotherboardInfo
+        $cpuInfo = @(Get-ProcessorInfo)
+        $storageInfo = @(Get-StorageInfo)
+        $memoryInfo = @(Get-MemoryInfo)
+        
+        # Get network info - handle null result specially
+        $networkInfo = $null
+        try {
+            $networkInfo = @(Get-NetworkInfo)
+        }
+        catch {
+            Write-Warning "Error getting network info: $_"
+            $networkInfo = @()
+        }
+        
+        # Ensure we have arrays even if the functions return null
+        if ($null -eq $cpuInfo) { $cpuInfo = @() }
+        if ($null -eq $storageInfo) { $storageInfo = @() }
+        if ($null -eq $memoryInfo) { $memoryInfo = @() }
+        if ($null -eq $networkInfo) { $networkInfo = @() }
 
+        # Build the inventory object
         $inventory = @{
             system = @{
                 system_id = $null
@@ -24,37 +44,47 @@ function Get-SystemInventory {
                 lab_row_rack = $null
                 lab_row_rack_id = $null
                 lab_rack_slot = $null
-                manufacturer = $systemInfo.basicInfo.Manufacturer
-                mgt_ip_address = $systemInfo.basicInfo.mgt_ip_address
-                mgt_mac_address = $systemInfo.basicInfo.mgt_mac_address
-                name_model = $systemInfo.basicInfo.Model
-                pools = @("Certification")
-                serial_number = $systemInfo.basicInfo.Serial_Number
-                sku = "SKU=0000;ModelName=$($systemInfo.Model)"
-                uuid = $systemInfo.basicInfo.UUID
+                manufacturer = $basicInfo.manufacturer
+                mgt_ip_address = $basicInfo.mgt_ip_address
+                mgt_mac_address = $basicInfo.mgt_mac_address
+                name_model = $basicInfo.name_model
+                pools = @("infrastructure")
+                serial_number = $basicInfo.serial_number
+                sku = "SKU=0000;ModelName=$($basicInfo.name_model)"
+                uuid = $basicInfo.uuid
                 version = "Not Specified"
                 inventory_id = $null
                 bmc = @{
-                    firmware_version = $null
-                    guid = $null
+                    firmware_revision = $null
+                    guid = $basicInfo.uuid
                     ip_address = $null
                     mac_address = $null
-                    manufacturer = $null
+                    manufacturer = $basicInfo.manufacturer
                     vlan = 0
                     user = $null
                     password = $null
                 }
-                bios = Get-BiosInfo
-                cpus = @(Get-ProcessorInfo)
-                memory_banks = @(Get-MemoryInfo)
-                motherboard = Get-MotherboardInfo
-                hard_drives = @(Get-StorageInfo)
-                ethernet_controllers = @(Get-NetworkInfo)
-                
+                motherboard = $mbInfo
+                status = $null
+                bios = $biosInfo
+                cpus = $cpuInfo
+                ethernet_controllers = $networkInfo
+                hard_drives = $storageInfo
+                kvm = $null
+                kvm_dongle_serial_number = $null
+                kvm_node_group = $null
+                kvm_node_interface_label = $null
+                kvm_node_label = $null
+                link_partner_system_ids = $null
+                memory_banks = $memoryInfo
+                extended_fields = $null
+                pdus = $null
+                power_options = $null
+                display_name = $null
             }
             schema_metadata = @{
                 schema_version = "v0.1"
-                origin = "Andreys-Inventory Tool"
+                origin = "Auto-Inventory Tool"
             }
         }
 
