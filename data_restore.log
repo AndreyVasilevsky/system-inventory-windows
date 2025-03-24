@@ -1,0 +1,12 @@
+2025-03-19 11:13:56,045 - ERROR - Invalid JSON format in file '.\auto_inventory_02-50-41-00-00-01.json': Expecting value: line 1 column 1 (char 0)
+2025-03-19 11:14:07,751 - ERROR - Invalid JSON format in file '.\auto_inventory_A4-BF-01-68-EA-2C.json': Expecting value: line 1 column 1 (char 0)
+2025-03-19 11:14:48,254 - ERROR - Invalid JSON format in file '.\auto_inventory_00-15-5D-01-27-17.json': Expecting value: line 1 column 1 (char 0)
+2025-03-20 12:00:49,823 - ERROR - Error validating data against AddUpdateRequest model: 1 validation error for AddUpdateRequest
+system.ethernet_controllers.0.pcie_functions.0.ip_address
+  Value error, must be a valid IPv4 or IPv6 address [type=value_error, input_value='1', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.10/v/value_error
+2025-03-20 12:25:11,857 - INFO - Data loaded successfully
+2025-03-20 12:27:41,257 - INFO - Data loaded successfully
+2025-03-20 12:47:46,435 - INFO - Data loaded successfully
+2025-03-20 12:49:15,628 - INFO - Data loaded successfully
+2025-03-20 13:05:04,523 - INFO - Data loaded successfully

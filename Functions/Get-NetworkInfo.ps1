@@ -159,8 +159,29 @@ function Get-NetworkInfo {
                 pcie_width_max = $null
                 pcie_functions = @(
                     @{
-                        bus_device_function = $controller.PNPDeviceID
-                        ip_address = if ($ipAddresses.Count -gt 0) { $ipAddresses[0] } else { $null }
+                        bus_device_function = $null #$controller.PNPDeviceID
+                        ip_address = if ($ipAddresses.Count -gt 0) {
+                            $validIp = $ipAddresses | Where-Object { 
+                                $_ -match '^\d{1,3}(\.\d{1,3}){3}$' 
+                            }
+                            foreach ($ip in $ipAddresses) {
+                                Write-Verbose "Checking IP address: $ip"
+                                if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') {
+                                    Write-Verbose "Matched IP address: $ip"
+                                }
+                            }
+                            if ($validIp.Count -eq 1) { 
+                                Write-Verbose "Found IP address: $($validIp)"
+                                $validIp  # Return the first valid IP address
+                            } else { 
+                                if ($validIp.Count -gt 1) {
+                                    Write-Warning "Multiple valid IP addresses found: $($validIp -join ', ')"
+                                }
+                                $validIp[0]  # Return the first valid IP address
+                            }
+                        } else {
+                            $null  # No IP addresses found
+                        }
                         is_management_port = ($controller.InterfaceIndex -eq $basicInfo.mgt_adapter_index)
                         mac_address = $controller.MACAddress -replace "-", ":"
                         pcie_speed_current = $pcieLinkSpeed

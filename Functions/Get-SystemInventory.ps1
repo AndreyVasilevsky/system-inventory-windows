@@ -84,7 +84,7 @@ function Get-SystemInventory {
             }
             schema_metadata = @{
                 schema_version = "v0.1"
-                origin = "Auto-Inventory Tool"
+                origin = "Andrey's Inventory Script - Windows"
             }
         }
 

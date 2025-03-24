@@ -1,0 +1,4 @@
+--extra-index-url https://ubit-artifactory-or.intel.com/artifactory/api/pypi/epg-sw-mfd-or-repos/simple
+--trusted-host ubit-artifactory-or.intel.com
+
+maestro_api_models

@@ -1,13 +1,24 @@
 function Get-SystemBasicInfo {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory=$false)]
+        [string]$Subnet
+    )
     
     try {
+        if (-not $Subnet) {
+            $subnetFilePath = Join-Path -Path $PSScriptRoot -ChildPath "subnet.txt"
+            if (Test-Path $subnetFilePath) {
+                $Subnet = Get-Content -Path $subnetFilePath -ErrorAction Stop
+            } else {
+                throw "Subnet not provided and subnet.txt file not found."
+            }
+        }
         $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
         
-        # Get first IP in 10.0.0.0/8 subnet
+        # Get first IP in the specified subnet
         $firstIP = Get-NetIPAddress | Where-Object { 
-            $_.AddressFamily -eq 'IPv4' -and $_.IPAddress -like "10.*"
+            $_.AddressFamily -eq 'IPv4' -and $_.IPAddress -like "$Subnet*"
         } | Select-Object -First 1
         
         # Get adapter index and MAC based on the first IP

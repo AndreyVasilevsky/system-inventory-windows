@@ -7,11 +7,11 @@ function Get-MemoryInfo {
         Get-WmiObject -Class Win32_PhysicalMemory | ForEach-Object {
             @{
                 memory_bank_id = $null
-                description = $_.MemoryType
+                description = $null
                 manufacturer = $_.Manufacturer
                 product_string = $_.PartNumber
                 size_gb = [math]::Round($_.Capacity / 1GB, 2)
-                slot = $_.DeviceLocator
+                slot = ($_.DeviceLocator -split '_')[-1]
                 speed_mts = $_.Speed
             }
         }

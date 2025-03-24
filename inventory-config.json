@@ -1,0 +1,26 @@
+{
+    "Credentials": {
+      "Username": "administrator",
+      "Password": "Admin@12"
+    },
+    "Subnet": {
+      "BaseSubnet": "192.168",
+      "StartIP": 1,
+      "EndIP": 254
+    },
+    "OutputSettings": {
+      "OutputDirectory": "C:\\Inventory",
+      "CreateTimestampedFolder": true,
+      "ValidateJsonFiles": true
+    },
+    "ModuleSettings": {
+      "ModulePath": ".\\SystemInventory",
+      "TempRemotePath": "C:\\Temp\\SystemInventory"
+    },
+    "Execution": {
+      "MaxConcurrentJobs": 20,
+      "RetryCount": 3,
+      "ConnectionTimeoutSeconds": 5,
+      "ExecutionTimeoutMinutes": 10
+    }
+  }

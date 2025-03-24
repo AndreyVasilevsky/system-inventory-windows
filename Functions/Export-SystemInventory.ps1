@@ -2,10 +2,29 @@ function Export-SystemInventory {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$false)]
-        [string]$OutputPath = $PWD
+        [string]$OutputPath = $PWD,
+
+        [Parameter(Mandatory=$false)]
+        [string]$Subnet = $null
     )
     
     try {
+        # If Subnet is not provided, read it from subnet.txt
+        if (-not $Subnet) {
+            $subnetFilePath = Join-Path -Path $PSScriptRoot -ChildPath "subnet.txt"
+            if (Test-Path $subnetFilePath) {
+                $Subnet = Get-Content -Path $subnetFilePath -ErrorAction Stop
+            } else {
+                throw "Subnet not provided and subnet.txt file not found."
+            }
+        }
+
+        # Pass the subnet to Get-SystemBasicInfo
+        $basicInfo = Get-SystemBasicInfo -Subnet $Subnet
+        if ($null -eq $basicInfo) {
+            throw "Failed to get basic system information"
+        }
+
         $inventory = Get-SystemInventory
         if ($null -eq $inventory) {
             throw "Failed to get system inventory"
@@ -16,7 +35,6 @@ function Export-SystemInventory {
         
         # Ensure we have a single valid MAC address
         if ([string]::IsNullOrEmpty($macAddress)) {
-            $basicInfo = Get-SystemBasicInfo
             $macAddress = $basicInfo.mgt_mac_address
         }
         
@@ -35,8 +53,8 @@ function Export-SystemInventory {
 
         $fileName = Join-Path $OutputPath "auto_inventory_$macAddress.json"
         
-        # Export to JSON file
-        $inventory | ConvertTo-Json -Depth 10 | Out-File $fileName
+        # Export to JSON file with UTF-8 encoding
+        $inventory | ConvertTo-Json -Depth 10 | Out-File -FilePath $fileName
 
         Write-Host "Inventory has been saved to $fileName"
         return $fileName
