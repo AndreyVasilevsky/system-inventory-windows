@@ -48,7 +48,7 @@ function Get-SystemInventory {
                 mgt_ip_address = $basicInfo.mgt_ip_address
                 mgt_mac_address = $basicInfo.mgt_mac_address
                 name_model = $basicInfo.name_model
-                pools = @("infrastructure")
+                pools = @("CERT_LAB")
                 serial_number = $basicInfo.serial_number
                 sku = "SKU=0000;ModelName=$($basicInfo.name_model)"
                 uuid = $basicInfo.uuid
