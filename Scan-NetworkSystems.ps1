@@ -167,6 +167,8 @@ function Detect-HostType {
 
     try {
         # Connect to the remote system using WinRM without creating session options
+        $sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
+        
         $scriptBlock = {
             # Get system information
             $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
@@ -196,7 +198,7 @@ function Detect-HostType {
         }
         
         # Use simple timeout parameter instead of session options
-        $remoteResult = Invoke-Command -ComputerName $ComputerName -Credential $Credential -ScriptBlock $scriptBlock -ErrorAction Stop
+        $remoteResult = Invoke-Command -ComputerName $ComputerName -Credential $Credential -ScriptBlock $scriptBlock -ErrorAction Stop -Authentication Negotiate
         
         # Update the result object
         $result.IsVirtual = $remoteResult.IsVirtual

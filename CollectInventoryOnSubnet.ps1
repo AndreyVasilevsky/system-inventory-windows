@@ -525,7 +525,7 @@ try {
         
         while ($retry -le $maxRetries -and -not $session) {
             try {
-                $session = New-PSSession -ComputerName $ipAddress -Credential $credentials -ErrorAction Stop
+                $session = New-PSSession -ComputerName $ipAddress -Credential $credentials -ErrorAction Stop -Authentication Negotiate
                 Write-LogMessage -Message "Successfully established PSSession with $ipAddress" -Level Success
             }
             catch {
