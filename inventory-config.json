@@ -1,8 +1,26 @@
 {
-  "Credentials": {
-    "Username": "administrator",
-    "Password": "Admin@12"
-  },
+  "Credentials": [
+    {
+    "Username": "dtmlluadminuser",
+    "Password": "Testpassword,1",
+    "Description": "Cert Admin"
+    },
+    {
+      "Username": "administrator",
+      "Password": "Admin@12",
+      "Description": "Local Admin"
+    },
+    {
+      "Username": "admin",
+      "Password": "Admin@12",
+      "Description": "Client Admin"
+    },
+    {
+      "Username": "bob",
+      "Password": "Admin@12",
+      "Description":"Domain Admin"
+    }
+],
   "Subnet": {
     "BaseSubnet": "172.22.1",
     "StartIP": 1,

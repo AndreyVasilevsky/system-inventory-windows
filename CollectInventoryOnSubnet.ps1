@@ -39,7 +39,7 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 # Set up output directory
 if (-not $OutputPath) {
-    $OutputPath = "PhysicalInventory"
+    $OutputPath = "PhysicalInventory-$timestamp"
 }
 
 if (-not (Test-Path -Path $OutputPath)) {
@@ -47,7 +47,7 @@ if (-not (Test-Path -Path $OutputPath)) {
 }
 
 # Set up log file
-$logFile = Join-Path -Path $OutputPath -ChildPath "PhysicalInventory.log"
+$logFile = Join-Path -Path $OutputPath -ChildPath "PhysicalInventory-$timestamp.log"
 New-Item -Path $logFile -ItemType File -Force | Out-Null
 
 function Write-LogMessage {
@@ -458,9 +458,21 @@ try {
         Write-LogMessage -Message "Failed to configure WinRM trusted hosts, continuing anyway..." -Level Warning
     }
     
-    # Create credential object
-    $securePassword = ConvertTo-SecureString -String $config.Credentials.Password -AsPlainText -Force
-    $credentials = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $config.Credentials.Username, $securePassword
+    # Create credential objects from config
+    $credentialObjects = @()
+    
+    foreach ($credConfig in $config.Credentials) {
+        $securePassword = ConvertTo-SecureString -String $credConfig.Password -AsPlainText -Force
+        $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $credConfig.Username, $securePassword
+        
+        $credentialObjects += [PSCustomObject]@{
+            Credential = $credential
+            Username = $credConfig.Username
+            Description = if ($credConfig.Description) { $credConfig.Description } else { $credConfig.Username }
+        }
+    }
+    
+    Write-LogMessage -Message "Loaded $($credentialObjects.Count) credential sets for authentication" -Level Info
     
     # Import CSV data
     try {
@@ -470,9 +482,10 @@ try {
         # Validate CSV format
         if (-not ($csvData | Get-Member -Name "IPAddress" -MemberType NoteProperty) -or
             -not ($csvData | Get-Member -Name "IsVirtual" -MemberType NoteProperty) -or
-            -not ($csvData | Get-Member -Name "WinRMResponse" -MemberType NoteProperty)) {
+            -not ($csvData | Get-Member -Name "WinRMResponse" -MemberType NoteProperty) -or
+            -not ($csvData | Get-Member -Name "CredentialUsed" -MemberType NoteProperty)) {
             
-            Write-LogMessage -Message "Invalid CSV format: Missing required columns (IPAddress, IsVirtual, WinRMResponse)" -Level Error
+            Write-LogMessage -Message "Invalid CSV format: Missing required columns (IPAddress, IsVirtual, WinRMResponse, CredentialUsed)" -Level Error
             exit 1
         }
     }
@@ -518,15 +531,49 @@ try {
         $processed++
         Write-LogMessage -Message "Processing physical system $ipAddress ($processed/$totalPhysical)" -Level Info
         
+        # Get the credential that was used in the scan
+        $credentialUsername = $system.CredentialUsed
+        $primaryCredObj = $credentialObjects | Where-Object { $_.Username -eq $credentialUsername } | Select-Object -First 1
+        
+        if (-not $primaryCredObj) {
+            Write-LogMessage -Message "Credential '$credentialUsername' specified in CSV not found in config. Will try all available credentials." -Level Warning
+            $primaryCredObj = $credentialObjects | Select-Object -First 1
+        }
+        
+        Write-LogMessage -Message "Using credential '$($primaryCredObj.Username)' for connecting to $ipAddress" -Level Info
+        
         # Create PS Session
         $session = $null
         $retry = 0
         $maxRetries = [int]$config.Execution.RetryCount
+        $credentialTried = @()
         
+        # First try with the credential that was previously successful
         while ($retry -le $maxRetries -and -not $session) {
             try {
-                $session = New-PSSession -ComputerName $ipAddress -Credential $credentials -ErrorAction Stop -Authentication Negotiate
-                Write-LogMessage -Message "Successfully established PSSession with $ipAddress" -Level Success
+                # Try with the specified credential first
+                if ($retry -eq 0) {
+                    Write-LogMessage -Message "Trying to connect to $ipAddress with credential '$($primaryCredObj.Username)'" -Level Debug
+                    $session = New-PSSession -ComputerName $ipAddress -Credential $primaryCredObj.Credential -Authentication Negotiate -ErrorAction Stop
+                    $credentialTried += $primaryCredObj.Username
+                    Write-LogMessage -Message "Successfully established PSSession with $ipAddress using credential '$($primaryCredObj.Username)'" -Level Success
+                }
+                # If that fails, try with other credentials
+                else {
+                    # Get a credential we haven't tried yet
+                    $nextCredObj = $credentialObjects | Where-Object { $_.Username -notin $credentialTried } | Select-Object -First 1
+                    
+                    if ($nextCredObj) {
+                        Write-LogMessage -Message "Trying to connect to $ipAddress with alternate credential '$($nextCredObj.Username)'" -Level Debug
+                        $session = New-PSSession -ComputerName $ipAddress -Credential $nextCredObj.Credential -Authentication Negotiate -ErrorAction Stop
+                        $credentialTried += $nextCredObj.Username
+                        Write-LogMessage -Message "Successfully established PSSession with $ipAddress using alternate credential '$($nextCredObj.Username)'" -Level Success
+                    }
+                    else {
+                        Write-LogMessage -Message "No more credentials to try for $ipAddress" -Level Warning
+                        throw "All available credentials have been tried without success"
+                    }
+                }
             }
             catch {
                 $retry++

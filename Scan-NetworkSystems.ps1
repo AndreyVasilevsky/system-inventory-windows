@@ -23,7 +23,7 @@
 .EXAMPLE
     .\Scan-NetworkSystems.ps1
 .NOTES
-    Version: 2.1
+    Version: 2.2
 #>
 
 [CmdletBinding()]
@@ -86,6 +86,7 @@ function Write-Log {
     # Always log to file
     Add-Content -Path $logFile -Value $logMessage
 }
+
 function Set-WinRMTrustedHosts {
     [CmdletBinding()]
     param(
@@ -114,6 +115,7 @@ function Set-WinRMTrustedHosts {
         return $false
     }
 }
+
 function Test-Port {
     [CmdletBinding()]
     param(
@@ -146,6 +148,29 @@ function Test-Port {
     }
 }
 
+function Convert-ToCredentialObjects {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject[]]$CredentialConfigs
+    )
+    
+    $credentials = @()
+    
+    foreach ($config in $CredentialConfigs) {
+        $securePassword = ConvertTo-SecureString -String $config.Password -AsPlainText -Force
+        $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $config.Username, $securePassword
+        
+        $credentials += [PSCustomObject]@{
+            Credential = $credential
+            Description = $config.Description
+            Username = $config.Username
+        }
+    }
+    
+    return $credentials
+}
+
 function Detect-HostType {
     [CmdletBinding()]
     param(
@@ -153,60 +178,69 @@ function Detect-HostType {
         [string]$ComputerName,
         
         [Parameter(Mandatory = $true)]
-        [System.Management.Automation.PSCredential]$Credential,
-        
-        [Parameter(Mandatory = $false)]
-        [int]$TimeoutSeconds = 10
+        [PSCustomObject[]]$CredentialObjects
     )
 
     $result = [PSCustomObject]@{
         ComputerName = $ComputerName
         IsVirtual = $false
+        CredentialUsed = $null
         Error = $null
     }
-
-    try {
-        # Connect to the remote system using WinRM without creating session options
-        $sessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
-        
-        $scriptBlock = {
-            # Get system information
-            $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
+    
+    # Try each credential until successful
+    foreach ($credObj in $CredentialObjects) {
+        try {
+            Write-Log "Trying connection to $ComputerName with credential: $($credObj.Username)" -Level Debug
             
-            # Get the model and manufacturer
-            $model = $computerSystem.Model
-            $manufacturer = $computerSystem.Manufacturer
-            
-            # Check if it's a virtual machine
-            $isVirtual = $false
-            $virtualKeywords = @(
-                'virtual', 'vmware', 'vbox', 'hyperv', 'xen', 'kvm', 'bochs',
-                'qemu', 'parallels', 'virtual machine', 'vm:'
-            )
-            
-            foreach ($keyword in $virtualKeywords) {
-                if ($model -match $keyword -or $manufacturer -match $keyword) {
-                    $isVirtual = $true
-                    break
+            # Connect to the remote system using WinRM
+            $scriptBlock = {
+                # Get system information
+                $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
+                
+                # Get the model and manufacturer
+                $model = $computerSystem.Model
+                $manufacturer = $computerSystem.Manufacturer
+                
+                # Check if it's a virtual machine
+                $isVirtual = $false
+                $virtualKeywords = @(
+                    'virtual', 'vmware', 'vbox', 'hyperv', 'xen', 'kvm', 'bochs',
+                    'qemu', 'parallels', 'virtual machine', 'vm:'
+                )
+                
+                foreach ($keyword in $virtualKeywords) {
+                    if ($model -match $keyword -or $manufacturer -match $keyword) {
+                        $isVirtual = $true
+                        break
+                    }
+                }
+                
+                # Return the results
+                return @{
+                    IsVirtual = $isVirtual
                 }
             }
             
-            # Return the results
-            return @{
-                IsVirtual = $isVirtual
-            }
+            $remoteResult = Invoke-Command -ComputerName $ComputerName -Credential $credObj.Credential -ScriptBlock $scriptBlock -ErrorAction Stop
+            
+            # Update the result object on success
+            $result.IsVirtual = $remoteResult.IsVirtual
+            $result.CredentialUsed = $credObj.Username
+            $result.Error = $null
+            
+            # Successfully connected, exit the loop
+            Write-Log "Successfully connected to $ComputerName with credential: $($credObj.Username)" -Level Debug
+            return $result
         }
-        
-        # Use simple timeout parameter instead of session options
-        $remoteResult = Invoke-Command -ComputerName $ComputerName -Credential $Credential -ScriptBlock $scriptBlock -ErrorAction Stop -Authentication Negotiate
-        
-        # Update the result object
-        $result.IsVirtual = $remoteResult.IsVirtual
-    }
-    catch {
-        $result.Error = $_.Exception.Message
+        catch {
+            # Log the error but continue trying other credentials
+            Write-Log "Failed to connect to $ComputerName with credential $($credObj.Username): $_" -Level Debug
+        }
     }
     
+    # If we get here, all credentials failed
+    $result.Error = "Failed to connect with any credentials"
     return $result
 }
 
@@ -215,8 +249,8 @@ function Initialize-ScanResults {
     $scanResultsFile = "scan-results-$timestamp.csv"
     Write-Log "Creating scan results file: $scanResultsFile" -Level Info
     
-    # Create headers for the CSV file - including host type but not model/manufacturer
-    "IPAddress,IsOnline,ICMPResponse,SMBResponse,RDPResponse,WinRMResponse,IsVirtual,Timestamp" | 
+    # Create headers for the CSV file - now includes CredentialUsed
+    "IPAddress,IsOnline,ICMPResponse,SMBResponse,RDPResponse,WinRMResponse,IsVirtual,CredentialUsed,Timestamp" | 
         Out-File -FilePath $scanResultsFile -Encoding utf8
     
     return $scanResultsFile
@@ -231,13 +265,14 @@ function Save-HostResult {
         [bool]$SMBResponse,
         [bool]$RDPResponse,
         [bool]$WinRMResponse,
-        [bool]$IsVirtual = $false
+        [bool]$IsVirtual = $false,
+        [string]$CredentialUsed = ""
     )
     
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     
-    # Create the CSV line - with IsVirtual but without model/manufacturer
-    $line = "$IPAddress,$IsOnline,$ICMPResponse,$SMBResponse,$RDPResponse,$WinRMResponse,$IsVirtual,$timestamp"
+    # Create the CSV line - now includes CredentialUsed
+    $line = "$IPAddress,$IsOnline,$ICMPResponse,$SMBResponse,$RDPResponse,$WinRMResponse,$IsVirtual,$CredentialUsed,$timestamp"
     
     # Append to the scan results file
     $line | Out-File -FilePath $ScanResultsFile -Encoding utf8 -Append
@@ -271,7 +306,7 @@ function Process-ScanResults {
         } else {
             Write-Log "No active hosts found" -Level Warning
             # Create empty CSV with headers
-            "IPAddress,IsOnline,ICMPResponse,SMBResponse,RDPResponse,WinRMResponse,IsVirtual,Timestamp" | 
+            "IPAddress,IsOnline,ICMPResponse,SMBResponse,RDPResponse,WinRMResponse,IsVirtual,CredentialUsed,Timestamp" | 
                 Out-File -FilePath $OutputPath -Encoding utf8
         }
     } else {
@@ -281,7 +316,7 @@ function Process-ScanResults {
 
 # Main execution
 try {
-    Write-Log "Starting network scan (Version 2.1)" -Level Info
+    Write-Log "Starting network scan (Version 2.2)" -Level Info
     Write-Log "Protocol tests: ICMP=$TestICMP, SMB=$TestSMB, RDP=$TestRDP, WinRM=$TestWinRM, DetectHostType=$DetectHostType" -Level Info
     
     # Load configuration
@@ -291,17 +326,19 @@ try {
     }
     
     $config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
-    Set-WinRMTrustedHosts -AddAllHosts
-
+    
     # Validate configuration
     if (-not $config.Subnet -or -not $config.Execution -or -not $config.Credentials) {
         Write-Log "Invalid configuration file: Missing required sections" -Level Error
         exit 1
     }
     
-    # Create credential object for WinRM connections
-    $securePassword = ConvertTo-SecureString -String $config.Credentials.Password -AsPlainText -Force
-    $credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $config.Credentials.Username, $securePassword
+    # Setup WinRM trusted hosts
+    Set-WinRMTrustedHosts -AddAllHosts
+    
+    # Create credential objects from config
+    $credentialObjects = Convert-ToCredentialObjects -CredentialConfigs $config.Credentials
+    Write-Log "Loaded $($credentialObjects.Count) credential sets for authentication" -Level Info
     
     # Initialize scan results file
     $scanResultsFile = Initialize-ScanResults
@@ -368,17 +405,20 @@ try {
             
             # If WinRM is available and DetectHostType is enabled, detect if physical or virtual
             $isVirtual = $false
+            $credentialUsed = ""
             
             if ($DetectHostType -and $winrmResult) {
                 Write-Log "Detecting host type for $ip..." -Level Info
-                $hostTypeResult = Detect-HostType -ComputerName $ip -Credential $credential -TimeoutSeconds $timeoutSeconds
+                $hostTypeResult = Detect-HostType -ComputerName $ip -CredentialObjects $credentialObjects
                 
                 if ($hostTypeResult.Error -eq $null) {
                     $isVirtual = $hostTypeResult.IsVirtual
+                    $credentialUsed = $hostTypeResult.CredentialUsed
+                    
                     if ($isVirtual) {
-                        Write-Log "Host $ip is virtual" -Level Info
+                        Write-Log "Host $ip is virtual (using credential: $credentialUsed)" -Level Info
                     } else {
-                        Write-Log "Host $ip is physical" -Level Info
+                        Write-Log "Host $ip is physical (using credential: $credentialUsed)" -Level Info
                     }
                 } else {
                     Write-Log "Failed to detect host type for $ip : $($hostTypeResult.Error)" -Level Warning
@@ -387,7 +427,7 @@ try {
             
             Save-HostResult -ScanResultsFile $scanResultsFile -IPAddress $ip -IsOnline $isOnline `
                            -ICMPResponse $icmpResult -SMBResponse $smbResult -RDPResponse $rdpResult -WinRMResponse $winrmResult `
-                           -IsVirtual $isVirtual
+                           -IsVirtual $isVirtual -CredentialUsed $credentialUsed
         }
     }
     
